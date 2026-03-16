@@ -8,6 +8,19 @@ from backend.research_runner import run_research_job
 app = FastAPI(title="Supplier Agent – Phase 1 Discovery")
 
 
+@app.get("/health")
+def health_check():
+    """Quick check that env vars are loaded."""
+    import os
+    from backend.config import OPENAI_API_KEY, APIFY_TOKEN, OPENAI_MODEL
+    return {
+        "openai_key_set": bool(OPENAI_API_KEY),
+        "openai_key_prefix": OPENAI_API_KEY[:8] + "..." if OPENAI_API_KEY else "MISSING",
+        "openai_model": OPENAI_MODEL,
+        "apify_token_set": bool(APIFY_TOKEN),
+    }
+
+
 # =========================================================
 # REQUEST MODEL
 # =========================================================
