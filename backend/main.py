@@ -30,9 +30,24 @@ def test_llm():
         response = client.chat.completions.create(
             model=OPENAI_MODEL,
             messages=[{"role": "user", "content": "Say hello in one word."}],
-            max_tokens=10,
+            max_completion_tokens=10,
         )
         return {"status": "ok", "response": response.choices[0].message.content}
+    except Exception as e:
+        return {"status": "error", "error_type": type(e).__name__, "detail": str(e)}
+
+
+@app.get("/test-apify")
+def test_apify():
+    """Test if Apify can fetch a website."""
+    try:
+        from backend.web_fetcher import fetch_website_text
+        text = fetch_website_text("https://realflame.com")
+        return {
+            "status": "ok" if text else "empty",
+            "chars": len(text),
+            "preview": text[:300] if text else "NO TEXT RETURNED",
+        }
     except Exception as e:
         return {"status": "error", "error_type": type(e).__name__, "detail": str(e)}
 
