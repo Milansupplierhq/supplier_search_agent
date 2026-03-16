@@ -29,7 +29,8 @@ RAG_BROWSER_ACTOR_ID = os.getenv("RAG_BROWSER_ACTOR_ID", "apify/rag-web-browser"
 APIFY_MAX_RESULTS_PER_QUERY = env_int("APIFY_MAX_RESULTS_PER_QUERY", 20)
 APIFY_GOOGLE_SHOPPING_ACTOR_ID = os.getenv("APIFY_GOOGLE_SHOPPING_ACTOR_ID", "burbn/google-shopping-scraper")
 
-MAX_CANDIDATE_DOMAINS = env_int("MAX_CANDIDATE_DOMAINS", 60)
+MAX_CANDIDATE_DOMAINS = env_int("MAX_CANDIDATE_DOMAINS", 200)
+DEFAULT_TARGET_SUPPLIERS = env_int("DEFAULT_TARGET_SUPPLIERS", 20)
 BATCH_SIZE = env_int("BATCH_SIZE", 10)
 REQUEST_TIMEOUT_SEC = env_int("REQUEST_TIMEOUT_SEC", 12)
 MAX_RETRIES = env_int("MAX_RETRIES", 3)
@@ -38,6 +39,24 @@ SLEEP_BETWEEN_DOMAINS_SEC = env_float("SLEEP_BETWEEN_DOMAINS_SEC", 0.5)
 GOOGLE_SHEET_ID="12jzffHna_C-ouJj9iptRCwVTPvnXHdj8zrRV-S2wR2E"
 GOOGLE_SHEET_TAB="Supplier"
 # --- Supplier rules ---
+COUNTRY_OPTIONS = [
+    "United States",
+    "Canada",
+    "United Kingdom",
+    "Germany",
+    "Australia",
+]
+
+COUNTRY_ALIASES = {
+    "US": "United States", "USA": "United States", "United States": "United States",
+    "America": "United States",
+    "CA": "Canada", "Canada": "Canada",
+    "UK": "United Kingdom", "United Kingdom": "United Kingdom",
+    "Great Britain": "United Kingdom", "England": "United Kingdom",
+    "DE": "Germany", "Germany": "Germany", "Deutschland": "Germany",
+    "AU": "Australia", "Australia": "Australia",
+}
+
 ALLOWED_COUNTRIES = {
     "United States",
     "USA",

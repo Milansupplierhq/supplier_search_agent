@@ -1,3 +1,5 @@
+import json
+import os
 from datetime import datetime
 import gspread
 from google.oauth2.service_account import Credentials
@@ -25,10 +27,17 @@ def _get_sheet():
         raise ValueError("Missing GOOGLE_SHEET_ID")
 
     scope = ["https://www.googleapis.com/auth/spreadsheets"]
-    creds = Credentials.from_service_account_file(
-        "service_account.json",
-        scopes=scope
-    )
+
+    # Support both file and env var (for Railway/cloud deployment)
+    sa_json = os.getenv("GOOGLE_SERVICE_ACCOUNT_JSON")
+    if sa_json:
+        sa_info = json.loads(sa_json)
+        creds = Credentials.from_service_account_info(sa_info, scopes=scope)
+    else:
+        creds = Credentials.from_service_account_file(
+            "service_account.json",
+            scopes=scope
+        )
     gc = gspread.authorize(creds)
 
     sh = gc.open_by_key(GOOGLE_SHEET_ID)

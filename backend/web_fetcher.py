@@ -27,7 +27,18 @@ COMMON_PATHS = [
     "/products",
     "/solutions",
     "/our-story",
+]
+
+CONTACT_PATHS = [
     "/contact",
+    "/contact-us",
+    "/pages/contact",
+    "/pages/contact-us",
+    "/get-in-touch",
+    "/reach-us",
+    "/support",
+    "/customer-service",
+    "/help",
 ]
 
 
@@ -76,6 +87,23 @@ def fetch_url(url: str) -> str:
     except Exception as e:
         print(f"[RAG ERROR] {url} → {e}")
         return ""
+
+
+def fetch_contact_text(base_url: str, max_chars: int = 4000) -> str:
+    """
+    Fetch contact-specific pages to find email/phone.
+    Tries multiple contact URL patterns, returns first hit.
+    """
+    parsed = urlparse(base_url)
+    root = f"{parsed.scheme}://{parsed.netloc}"
+
+    for path in CONTACT_PATHS:
+        url = urljoin(root, path)
+        page_text = fetch_url(url)
+        if page_text:
+            return page_text[:max_chars]
+
+    return ""
 
 
 def fetch_website_text(base_url: str) -> str:

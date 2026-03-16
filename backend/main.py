@@ -2,16 +2,8 @@ from fastapi import FastAPI, BackgroundTasks
 from pydantic import BaseModel, Field
 from typing import List, Optional
 import uuid
-import traceback
 from backend.job_store import init_job, get_job
 from backend.research_runner import run_research_job
-from backend.utils import domain_from_url
-from backend.apify_runner import run_serp_discovery, run_serp_brand_lookup
-from backend.google_shopping_runner import run_google_shopping_discovery
-from backend.supplier_validator import process_supplier
-from backend.filters import is_blocked_domain
-from backend.sheets import append_supplier_row
-from backend.config import MAX_CANDIDATE_DOMAINS, BATCH_SIZE
 
 app = FastAPI(title="Supplier Agent – Phase 1 Discovery")
 
@@ -24,29 +16,9 @@ class ResearchRequest(BaseModel):
     candidate_urls: Optional[List[str]] = None
     use_apify: bool = True
     max_candidate_domains: Optional[int] = None
+    target_suppliers: Optional[int] = 20
+    allowed_countries: Optional[List[str]] = None
 
-
-# =========================================================
-# BRAND → DOMAIN RESOLUTION
-# =========================================================
-
-def resolve_brand_domains(brand: str, max_domains: int = 2) -> List[str]:
-    results = run_serp_brand_lookup(brand)
-    domains = []
-
-    for item in results:
-        domain = item.get("domain")
-        if not domain:
-            continue
-        if is_blocked_domain(domain):
-            continue
-
-        domains.append(domain)
-
-        if len(domains) >= max_domains:
-            break
-
-    return domains
 
 @app.post("/research/start")
 def start_research(req: ResearchRequest, background_tasks: BackgroundTasks):
@@ -83,6 +55,7 @@ def research_status(job_id: str):
         "progress_pct": progress_pct,
         "accepted_count": len(job.get("accepted", [])),
         "rejected_count": len(job.get("rejected", [])),
+        "target_suppliers": job.get("target_suppliers", 0),
         "error": job.get("error"),
     }
 
