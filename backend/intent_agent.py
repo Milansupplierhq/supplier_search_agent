@@ -55,6 +55,8 @@ def analyze_intent_with_llm(website_text: str) -> dict:
                 return json.loads(raw[start:end + 1])
 
     except Exception as e:
-        return {"error": f"intent_llm_failed: {str(e)}"}
+        import logging
+        logging.error(f"[INTENT LLM ERROR] {type(e).__name__}: {e}")
+        return {"error": f"intent_llm_failed: {type(e).__name__}: {str(e)}"}
 
     return {"error": "intent_llm_no_json"}

@@ -11,7 +11,6 @@ app = FastAPI(title="Supplier Agent – Phase 1 Discovery")
 @app.get("/health")
 def health_check():
     """Quick check that env vars are loaded."""
-    import os
     from backend.config import OPENAI_API_KEY, APIFY_TOKEN, OPENAI_MODEL
     return {
         "openai_key_set": bool(OPENAI_API_KEY),
@@ -19,6 +18,23 @@ def health_check():
         "openai_model": OPENAI_MODEL,
         "apify_token_set": bool(APIFY_TOKEN),
     }
+
+
+@app.get("/test-llm")
+def test_llm():
+    """Test if OpenAI API is reachable."""
+    try:
+        from openai import OpenAI
+        from backend.config import OPENAI_API_KEY, OPENAI_MODEL
+        client = OpenAI(api_key=OPENAI_API_KEY)
+        response = client.chat.completions.create(
+            model=OPENAI_MODEL,
+            messages=[{"role": "user", "content": "Say hello in one word."}],
+            max_tokens=10,
+        )
+        return {"status": "ok", "response": response.choices[0].message.content}
+    except Exception as e:
+        return {"status": "error", "error_type": type(e).__name__, "detail": str(e)}
 
 
 # =========================================================
