@@ -30,7 +30,6 @@ def test_llm():
         response = client.chat.completions.create(
             model=OPENAI_MODEL,
             messages=[{"role": "user", "content": "Say hello in one word."}],
-            max_completion_tokens=10,
         )
         return {"status": "ok", "response": response.choices[0].message.content}
     except Exception as e:
