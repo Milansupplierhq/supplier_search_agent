@@ -18,11 +18,14 @@ def run_serp_discovery(product: str) -> List[Dict]:
 
     print(f"[APIFY] Running SERP for: {product}")
 
+    # Use targeted queries to improve acceptance rate
+    queries = f"{product} supplier\n{product} manufacturer\n{product} wholesale"
+
     run_input = {
-        "queries": product,
+        "queries": queries,
         "countryCode": "us",
         "languageCode": "en",
-        "maxPagesPerQuery": 15,
+        "maxPagesPerQuery": 5,
         "mobileResults": False,
         "includeUnfilteredResults": False,
         "saveHtml": False,

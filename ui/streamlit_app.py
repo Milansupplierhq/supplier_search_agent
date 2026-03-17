@@ -23,6 +23,7 @@ COUNTRY_OPTIONS = [
 STATUS_LABELS = {
     "running": "Searching for suppliers...",
     "completed": "Research complete",
+    "stopped": "Research stopped",
     "failed": "Research failed",
     "not_found": "Job not found",
 }
@@ -35,7 +36,6 @@ st.set_page_config(page_title="Supplier Agent", layout="wide")
 st.markdown("""
 <style>
     .block-container { padding-top: 2rem; padding-bottom: 1rem; }
-    .stDataFrame { border-radius: 8px; }
 
     .supplier-table { overflow-x: auto; }
     .supplier-table table {
@@ -104,45 +104,205 @@ st.markdown("""
     [data-baseweb="tag"] span:first-child {
         color: #0369a1 !important;
     }
+
+    /* Download button styling */
+    .stDownloadButton > button {
+        background: #059669 !important;
+        color: white !important;
+        border: none !important;
+        border-radius: 8px !important;
+        font-weight: 600 !important;
+    }
+    .stDownloadButton > button:hover {
+        background: #047857 !important;
+    }
+
+    /* Stop button styling */
+    .stop-btn button {
+        background: #ef4444 !important;
+        color: white !important;
+        border: none !important;
+        border-radius: 8px !important;
+        font-weight: 600 !important;
+    }
+    .stop-btn button:hover {
+        background: #dc2626 !important;
+    }
+
+    /* Spinner animation */
+    @keyframes pulse {
+        0%, 100% { opacity: 1; }
+        50% { opacity: 0.4; }
+    }
+    .searching-indicator {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        padding: 12px 16px;
+        background: #eff6ff;
+        border: 1px solid #bfdbfe;
+        border-radius: 8px;
+        margin-bottom: 1rem;
+    }
+    .searching-dot {
+        width: 10px;
+        height: 10px;
+        border-radius: 50%;
+        background: #2563eb;
+        animation: pulse 1.5s ease-in-out infinite;
+    }
+    .searching-dot:nth-child(2) { animation-delay: 0.3s; }
+    .searching-dot:nth-child(3) { animation-delay: 0.6s; }
+    .searching-text {
+        color: #1e40af;
+        font-weight: 500;
+        font-size: 0.9rem;
+    }
 </style>
 """, unsafe_allow_html=True)
 
+ACCEPTED_COLS = {
+    "supplier_name": "Supplier Name",
+    "url": "Website",
+    "product": "Product Type",
+    "country": "Country",
+    "estimated_price_min": "Est. Price Min",
+    "supplier_type": "Supplier Type",
+    "confidence": "Confidence",
+    "email": "Email",
+    "phone": "Phone",
+    "estimated_margin_pct": "Est. Margin % (AI)",
+    "notes": "Notes",
+}
+
+REJECTED_COLS = {
+    "supplier_name": "Supplier Name",
+    "url": "Website",
+    "product": "Product Type",
+    "country": "Country",
+    "confidence": "Confidence",
+    "reason": "Rejection Reason",
+    "notes": "Notes",
+}
+
+
+def _render_results(accepted, rejected):
+    tab_accepted, tab_rejected = st.tabs(["Accepted Suppliers", "Rejected Suppliers"])
+
+    with tab_accepted:
+        if accepted:
+            df_a = pd.DataFrame(accepted)
+            for col in ACCEPTED_COLS:
+                if col not in df_a.columns:
+                    df_a[col] = None
+            df_a = df_a[[c for c in ACCEPTED_COLS if c in df_a.columns]]
+            df_a = df_a.rename(columns=ACCEPTED_COLS)
+            df_a = df_a.fillna("\u2014")
+            df_a = df_a.replace("None", "\u2014")
+            df_a["Website"] = df_a["Website"].apply(
+                lambda x: f'<a href="{x}" target="_blank">{x}</a>' if x and x != "\u2014" else "\u2014"
+            )
+            st.markdown(
+                '<div class="supplier-table">' + df_a.to_html(escape=False, index=False) + '</div>',
+                unsafe_allow_html=True,
+            )
+            df_csv = pd.DataFrame(accepted)
+            for col in ACCEPTED_COLS:
+                if col not in df_csv.columns:
+                    df_csv[col] = None
+            df_csv = df_csv[[c for c in ACCEPTED_COLS if c in df_csv.columns]]
+            df_csv = df_csv.rename(columns=ACCEPTED_COLS)
+            st.download_button("Download Accepted CSV", df_csv.to_csv(index=False), file_name="accepted_suppliers.csv", mime="text/csv")
+        else:
+            st.info("No accepted suppliers found.")
+
+    with tab_rejected:
+        if rejected:
+            df_r = pd.DataFrame(rejected)
+            for col in REJECTED_COLS:
+                if col not in df_r.columns:
+                    df_r[col] = None
+            df_r = df_r[[c for c in REJECTED_COLS if c in df_r.columns]]
+            df_r = df_r.rename(columns=REJECTED_COLS)
+            df_r = df_r.fillna("\u2014")
+            df_r = df_r.replace("None", "\u2014")
+            df_r["Website"] = df_r["Website"].apply(
+                lambda x: f'<a href="{x}" target="_blank">{x}</a>' if x and x != "\u2014" else "\u2014"
+            )
+            st.markdown(
+                '<div class="supplier-table">' + df_r.to_html(escape=False, index=False) + '</div>',
+                unsafe_allow_html=True,
+            )
+            st.download_button("Download Rejected CSV", df_r.to_csv(index=False), file_name="rejected_suppliers.csv", mime="text/csv")
+        else:
+            st.info("No rejected suppliers.")
+
+
 st.title("Supplier Research Agent")
-st.caption("Google Shopping → Google Search → Validation LLM → Table")
-
-# ----------------------------
-# INPUTS
-# ----------------------------
-col_input1, col_input2 = st.columns([2, 1])
-
-with col_input1:
-    product = st.text_input("Product", placeholder="e.g., Cold Plunge, Outdoor Sauna")
-
-with col_input2:
-    target_suppliers = st.slider("Number of suppliers to find", 10, 40, 20, step=5)
-
-selected_countries = st.multiselect(
-    "Supplier countries",
-    COUNTRY_OPTIONS,
-    default=COUNTRY_OPTIONS,
-)
-
-_, col_btn, _ = st.columns([2, 1, 2])
-with col_btn:
-    st.markdown('<div class="run-btn">', unsafe_allow_html=True)
-    run = st.button("Run Research", type="primary", use_container_width=True)
-    st.markdown('</div>', unsafe_allow_html=True)
+st.caption("Google Shopping \u2192 Google Search \u2192 Validation LLM \u2192 Table")
 
 # ----------------------------
 # SESSION STATE
 # ----------------------------
 if "job_id" not in st.session_state:
     st.session_state.job_id = None
+if "is_running" not in st.session_state:
+    st.session_state.is_running = False
+
+is_running = st.session_state.is_running
+
+# ----------------------------
+# INPUTS (disabled while running)
+# ----------------------------
+col_input1, col_input2 = st.columns([2, 1])
+
+with col_input1:
+    product = st.text_input("Product", placeholder="e.g., Cold Plunge, Outdoor Sauna", disabled=is_running)
+
+with col_input2:
+    target_suppliers = st.slider("Suppliers to find", 1, 40, 20, step=1, disabled=is_running)
+
+selected_countries = st.multiselect(
+    "Supplier countries",
+    COUNTRY_OPTIONS,
+    default=COUNTRY_OPTIONS,
+    disabled=is_running,
+)
+
+# ----------------------------
+# BUTTONS
+# ----------------------------
+if is_running:
+    _, col_btn, col_stop, _ = st.columns([3, 1, 1, 3])
+    with col_btn:
+        st.markdown('<div class="run-btn">', unsafe_allow_html=True)
+        run = st.button("Run Research", type="primary", use_container_width=True, disabled=True)
+        st.markdown('</div>', unsafe_allow_html=True)
+    with col_stop:
+        st.markdown('<div class="stop-btn">', unsafe_allow_html=True)
+        stop = st.button("Stop Research", use_container_width=True)
+        st.markdown('</div>', unsafe_allow_html=True)
+else:
+    _, col_btn, _ = st.columns([3, 1, 3])
+    with col_btn:
+        st.markdown('<div class="run-btn">', unsafe_allow_html=True)
+        run = st.button("Run Research", type="primary", use_container_width=True)
+        st.markdown('</div>', unsafe_allow_html=True)
+    stop = False
+
+# ----------------------------
+# STOP HANDLER
+# ----------------------------
+if stop and st.session_state.job_id:
+    try:
+        requests.post(f"{BASE_URL}/research/stop/{st.session_state.job_id}")
+    except Exception:
+        pass
 
 # ----------------------------
 # START JOB
 # ----------------------------
-if run:
+if run and not is_running:
     if not product.strip():
         st.error("Please enter a product.")
         st.stop()
@@ -161,14 +321,26 @@ if run:
         data = resp.json()
 
     st.session_state.job_id = data["job_id"]
+    st.session_state.is_running = True
+    st.rerun()
 
 # ----------------------------
 # POLLING
 # ----------------------------
 job_id = st.session_state.job_id
 
-if job_id:
-    status_placeholder = st.empty()
+if job_id and is_running:
+    # Animated searching indicator
+    anim_placeholder = st.empty()
+    anim_placeholder.markdown("""
+    <div class="searching-indicator">
+        <div class="searching-dot"></div>
+        <div class="searching-dot"></div>
+        <div class="searching-dot"></div>
+        <span class="searching-text">Analyzing supplier websites...</span>
+    </div>
+    """, unsafe_allow_html=True)
+
     progress_bar = st.progress(0)
     metrics_placeholder = st.empty()
 
@@ -180,156 +352,75 @@ if job_id:
         state = status.get("status")
         processed = status.get("processed", 0)
         total = status.get("total", 1)
-        percent = status.get("progress_pct", 0)
 
         accepted_count = status.get("accepted_count", 0)
         rejected_count = status.get("rejected_count", 0)
         target = status.get("target_suppliers", target_suppliers)
 
-        # Progress based on suppliers found vs target
         supplier_pct = min(int((accepted_count / target) * 100), 100) if target else 0
 
-        friendly_status = STATUS_LABELS.get(state, state)
-
         progress_bar.progress(supplier_pct)
-        status_placeholder.info(f"**{friendly_status}** — {supplier_pct}%")
 
         m1, m2, m3 = metrics_placeholder.columns(3)
         m1.metric("Suppliers Found", f"{accepted_count} / {target}")
         m2.metric("Candidates Processed", f"{processed} / {total}")
         m3.metric("Rejected", rejected_count)
 
-        if state == "completed":
+        if state in ("completed", "stopped", "failed"):
             break
 
-        if state == "failed":
-            st.error(f"Research failed: {status.get('error', 'Unknown error')}")
-            st.stop()
+        # Target reached — stop polling immediately
+        if accepted_count >= target:
+            break
 
         time.sleep(4)
 
-    # ----------------------------
-    # FETCH RESULTS
-    # ----------------------------
-    with st.spinner("Loading results..."):
+    # Clear animation
+    anim_placeholder.empty()
+    st.session_state.is_running = False
+
+    if state == "failed":
+        st.session_state.last_error = status.get("error", "Unknown error")
+    else:
+        # Fetch final results and store in session
         resp = requests.get(f"{BASE_URL}/research/result/{job_id}")
         resp.raise_for_status()
         result = resp.json()
+        st.session_state.last_result = result
+        st.session_state.last_state = state
 
-    st.success(
-        f"Research complete — found **{result['accepted_count']}** suppliers "
-        f"({result['rejected_count']} rejected)"
-    )
+    # Rerun to reset buttons (Run Research centered, no Stop button)
+    st.rerun()
 
-    # ----------------------------
-    # RESULTS TABS
-    # ----------------------------
-    tab_accepted, tab_rejected = st.tabs(["Accepted Suppliers", "Rejected Suppliers"])
+elif job_id and not is_running:
+    # Check for error from just-finished run
+    if st.session_state.get("last_error"):
+        st.error(f"Research failed: {st.session_state.last_error}")
+        st.session_state.last_error = None
+    else:
+        # Use cached result from session or fetch from backend
+        result = st.session_state.get("last_result")
+        if not result:
+            resp = requests.get(f"{BASE_URL}/research/result/{job_id}")
+            if resp.ok:
+                result = resp.json()
 
-    with tab_accepted:
-        accepted = result.get("accepted", [])
-        if accepted:
-            ACCEPTED_COLS = {
-                "supplier_name": "Supplier Name",
-                "url": "Website",
-                "product": "Product Type",
-                "country": "Country",
-                "estimated_price_min": "Est. Price Min",
-                "supplier_type": "Supplier Type",
-                "confidence": "Confidence",
-                "email": "Email",
-                "phone": "Phone",
-                "estimated_margin_pct": "Est. Margin % (AI estimate)",
-                "notes": "Notes",
-            }
+        if result:
+            accepted = result.get("accepted", [])
+            rejected = result.get("rejected", [])
+            a_count = result.get("accepted_count", len(accepted))
+            r_count = result.get("rejected_count", len(rejected))
 
-            df_a = pd.DataFrame(accepted)
+            last_state = st.session_state.get("last_state", "completed")
 
-            for col in ACCEPTED_COLS:
-                if col not in df_a.columns:
-                    df_a[col] = None
-
-            df_a = df_a[[c for c in ACCEPTED_COLS if c in df_a.columns]]
-            df_a = df_a.rename(columns=ACCEPTED_COLS)
-
-            # Replace None/NaN with dash
-            df_a = df_a.fillna("—")
-
-            df_a["Website"] = df_a["Website"].apply(
-                lambda x: f'<a href="{x}" target="_blank">{x}</a>' if pd.notna(x) and x else ""
-            )
-
-            st.markdown(
-                '<div class="supplier-table">' + df_a.to_html(escape=False, index=False) + '</div>',
-                unsafe_allow_html=True,
-            )
-
-            # CSV download (plain URLs, no HTML)
-            df_csv = pd.DataFrame(accepted)
-            for col in ACCEPTED_COLS:
-                if col not in df_csv.columns:
-                    df_csv[col] = None
-            df_csv = df_csv[[c for c in ACCEPTED_COLS if c in df_csv.columns]]
-            df_csv = df_csv.rename(columns=ACCEPTED_COLS)
-
-            st.download_button(
-                "Download Accepted CSV",
-                df_csv.to_csv(index=False),
-                file_name="accepted_suppliers.csv",
-                mime="text/csv",
-            )
-        else:
-            st.info("No accepted suppliers found.")
-
-    with tab_rejected:
-        rejected = result.get("rejected", [])
-        if rejected:
-            REJECTED_COLS = {
-                "supplier_name": "Supplier Name",
-                "url": "Website",
-                "product": "Product Type",
-                "country": "Country",
-                "confidence": "Confidence",
-                "reason": "Rejection Reason",
-                "notes": "Notes",
-            }
-
-            df_r = pd.DataFrame(rejected)
-
-            for col in REJECTED_COLS:
-                if col not in df_r.columns:
-                    df_r[col] = None
-
-            df_r = df_r[[c for c in REJECTED_COLS if c in df_r.columns]]
-            df_r = df_r.rename(columns=REJECTED_COLS)
-
-            # Replace None/NaN with dash
-            df_r = df_r.fillna("—")
-
-            df_r["Website"] = df_r["Website"].apply(
-                lambda x: f'<a href="{x}" target="_blank">{x}</a>' if pd.notna(x) and x else ""
-            )
-
-            st.markdown(
-                '<div class="supplier-table">' + df_r.to_html(escape=False, index=False) + '</div>',
-                unsafe_allow_html=True,
-            )
-
-            df_csv_r = pd.DataFrame(rejected)
-            for col in REJECTED_COLS:
-                if col not in df_csv_r.columns:
-                    df_csv_r[col] = None
-            df_csv_r = df_csv_r[[c for c in REJECTED_COLS if c in df_csv_r.columns]]
-            df_csv_r = df_csv_r.rename(columns=REJECTED_COLS)
-
-            st.download_button(
-                "Download Rejected CSV",
-                df_csv_r.to_csv(index=False),
-                file_name="rejected_suppliers.csv",
-                mime="text/csv",
-            )
-        else:
-            st.info("No rejected suppliers.")
+            if a_count or r_count:
+                if last_state == "stopped":
+                    st.warning(f"Research stopped early \u2014 found **{a_count}** suppliers ({r_count} rejected)")
+                else:
+                    st.success(f"Research complete \u2014 found **{a_count}** suppliers ({r_count} rejected)")
+                _render_results(accepted, rejected)
+            else:
+                st.info("No suppliers found. Try a different product or broader country selection.")
 
 else:
     st.markdown(

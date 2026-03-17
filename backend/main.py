@@ -3,7 +3,7 @@ from fastapi import FastAPI, BackgroundTasks
 from pydantic import BaseModel, Field
 from typing import List, Optional
 import uuid
-from backend.job_store import init_job, get_job
+from backend.job_store import init_job, get_job, update_job
 from backend.research_runner import run_research_job
 
 logging.basicConfig(level=logging.INFO, format="%(levelname)s %(name)s | %(message)s")
@@ -105,19 +105,35 @@ def research_status(job_id: str):
         "error": job.get("error"),
     }
 
+@app.post("/research/stop/{job_id}")
+def stop_research(job_id: str):
+    job = get_job(job_id)
+    if not job:
+        return {"status": "not_found"}
+    if job["status"] == "running":
+        update_job(job_id, status="stopped")
+        return {"status": "stopped"}
+    return {"status": job["status"]}
+
+
 @app.get("/research/result/{job_id}")
 def research_result(job_id: str):
     job = get_job(job_id)
     if not job:
         return {"status": "not_found"}
 
-    if job["status"] != "completed":
+    accepted = job.get("accepted", [])
+    rejected = job.get("rejected", [])
+
+    # Allow fetching results even mid-run (e.g. when target is met)
+    if job["status"] not in ("completed", "stopped", "running"):
         return {"status": job["status"]}
 
     return {
         "job_id": job_id,
-        "accepted": job["accepted"],
-        "rejected": job["rejected"][:50],
-        "accepted_count": len(job["accepted"]),
-        "rejected_count": len(job["rejected"]),
+        "status": job["status"],
+        "accepted": accepted,
+        "rejected": rejected[:50],
+        "accepted_count": len(accepted),
+        "rejected_count": len(rejected),
     }

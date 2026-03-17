@@ -1,7 +1,11 @@
+import time
+import logging
 import requests
 from urllib.parse import urljoin, urlparse
 
 from backend.config import APIFY_TOKEN
+
+logger = logging.getLogger(__name__)
 
 # -----------------------
 # RAG CONFIG
@@ -11,6 +15,12 @@ RAG_ENDPOINT = "https://rag-web-browser.apify.actor/search"
 MAX_PAGES_PER_DOMAIN = 5
 MAX_CHARS_TOTAL = 8000
 REQUEST_TIMEOUT = 25
+
+# -----------------------
+# IN-MEMORY FETCH CACHE
+# -----------------------
+_fetch_cache: dict[str, tuple[str, float]] = {}  # url → (text, timestamp)
+CACHE_TTL = 3600  # 1 hour
 
 # -----------------------
 # SMART PATHS TO TRY
@@ -61,8 +71,20 @@ def _build_candidate_urls(base_url: str) -> list[str]:
 def fetch_url(url: str) -> str:
     """
     Fetch ONE page via RAG Web Browser (URL mode).
+    Uses in-memory cache to avoid duplicate Apify calls.
     HARD SAFETY NET: never raises; returns "" on any failure.
     """
+    # Check cache first
+    now = time.time()
+    cached = _fetch_cache.get(url)
+    if cached:
+        text, ts = cached
+        if now - ts < CACHE_TTL:
+            logger.debug(f"[RAG CACHE HIT] {url}")
+            return text
+        else:
+            del _fetch_cache[url]
+
     params = {
         "token": APIFY_TOKEN,
         "query": url,                 # URL MODE (no Google search)
@@ -78,14 +100,16 @@ def fetch_url(url: str) -> str:
 
         items = resp.json()
         if not items:
+            _fetch_cache[url] = ("", now)
             return ""
 
-        # ✅ Prefer markdown, fall back to text if actor returns text
         content = items[0].get("markdown") or items[0].get("text") or ""
-        return content.strip()
+        result = content.strip()
+        _fetch_cache[url] = (result, now)
+        return result
 
     except Exception as e:
-        print(f"[RAG ERROR] {url} → {e}")
+        logger.warning(f"[RAG ERROR] {url} → {e}")
         return ""
 
 

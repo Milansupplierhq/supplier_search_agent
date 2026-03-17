@@ -6,27 +6,25 @@ from openai import OpenAI
 from backend.brand_utils import infer_supplier_name
 from backend.config import OPENAI_API_KEY, OPENAI_MODEL, NO_TEMPERATURE_MODELS, COUNTRY_ALIASES
 from backend.web_fetcher import fetch_website_text, fetch_contact_text
-from backend.intent_agent import analyze_intent_with_llm
 
 logger = logging.getLogger(__name__)
 client = OpenAI(api_key=OPENAI_API_KEY)
 
 
 SYSTEM_PROMPT = """
-You are a supplier research analyst.
+You are a supplier research analyst. Perform TWO tasks in a SINGLE pass:
 
-Classify the company based ONLY on the website content provided.
+TASK 1 — INTENT CLASSIFICATION
+Determine if this company sells PHYSICAL, tangible products.
+- is_product_company = true ONLY for companies selling physical goods
+- SaaS, software, platforms, apps, digital products → false
+- Services, consulting, agencies → false
+- Hotels, clinics, spas, medical services → false
+- Blogs, news, review sites, directories → false
+- Be strict: if unclear, set to false
 
+TASK 2 — SUPPLIER CLASSIFICATION (only meaningful if is_product_company = true)
 Choose EXACTLY ONE supplier_type from:
-- Manufacturer
-- Brand owner
-- Distributor
-- Retailer
-- Marketplace
-- Media / Blog
-- Unknown
-
-Definitions:
 - Manufacturer: designs, produces, or owns branded products
 - Brand owner: sells products under its own brand (even if outsourced manufacturing)
 - Distributor: sells products B2B, often wholesale, not direct-to-consumer focused
@@ -39,6 +37,7 @@ Rules:
 - If evidence is weak or unclear → Unknown
 - Unknown companies MUST NOT be treated as suppliers
 - Be decisive, do not hedge
+- If is_product_company is false, set supplier_type to the most fitting non-product category
 
 Also extract:
 - The official company/business name as displayed on the website
@@ -47,6 +46,13 @@ Also extract:
 - Contact email address if visible on the website (null if not found)
 - Contact phone number if visible on the website (null if not found)
 - Estimated retail margin percentage. Match the product to the closest category below and return that margin. If the product spans multiple categories, pick the best match. If no category fits, return null.
+
+NOTES rules:
+- Keep notes brief (1-2 sentences max)
+- Focus on what the company does and what products they sell
+- Do NOT mention margin category matching or margin percentages in notes
+- Do NOT mention whether contact info was found or not in notes
+- Do NOT mention what was or wasn't visible in the provided content
 
 MARGIN REFERENCE TABLE:
 Fire Pit: 40% | Fireplace: 40% | Indoor furniture (couch, chair, etc.): 30%
@@ -95,6 +101,7 @@ Golf Cart: 15% | Chess Set: 20%
 
 Respond ONLY with valid JSON in this schema:
 {
+  "is_product_company": true/false,
   "company_name": "",
   "supplier_type": "",
   "owns_brand": true/false/null,
@@ -201,41 +208,11 @@ def process_supplier(
         }
 
     # -------------------------------------------------
-    # 2) Intent classification (LLM)
-    # -------------------------------------------------
-    intent_result = analyze_intent_with_llm(website_text)
-
-    logger.info(f"[PIPELINE] {url} — intent: {intent_result}")
-
-    if "error" in intent_result or "intent" not in intent_result:
-        return {
-            "product": product,
-            "url": url,
-            "status": "rejected",
-            "needs_manual_review": False,
-            "reason": intent_result.get("error", "intent_missing"),
-            "confidence": 0.4,
-        }
-
-    intent = intent_result["intent"].strip().lower()
-
-    if intent not in {"product_company"}:
-        return {
-            "product": product,
-            "url": url,
-            "status": "rejected",
-            "needs_manual_review": False,
-            "reason": f"intent:{intent}",
-            "confidence": intent_result.get("confidence", 0.8),
-            "notes": intent_result.get("evidence", ""),
-        }
-
-    # -------------------------------------------------
-    # 3) Supplier classification (LLM)
+    # 2) Combined intent + supplier classification (single LLM call)
     # -------------------------------------------------
     llm_result = analyze_supplier_with_llm(website_text)
 
-    logger.info(f"[PIPELINE] {url} — supplier LLM: {llm_result}")
+    logger.info(f"[PIPELINE] {url} — LLM result: {llm_result}")
 
     if "error" in llm_result:
         return {
@@ -247,12 +224,21 @@ def process_supplier(
             "confidence": 0.4,
         }
 
+    # Intent check (from merged response)
+    if not llm_result.get("is_product_company"):
+        return {
+            "product": product,
+            "url": url,
+            "status": "rejected",
+            "needs_manual_review": False,
+            "reason": f"intent:not_product_company",
+            "confidence": llm_result.get("confidence", 0.8),
+            "notes": llm_result.get("notes", ""),
+        }
+
     supplier = {
         "product": product,
         "url": url,
-        "intent": intent,
-        "intent_confidence": intent_result.get("confidence"),
-        "intent_evidence": intent_result.get("evidence"),
         "supplier_type": llm_result.get("supplier_type"),
         "owns_brand": llm_result.get("owns_brand"),
         "estimated_price_min": llm_result.get("estimated_price_min"),

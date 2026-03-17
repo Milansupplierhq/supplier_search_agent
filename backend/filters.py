@@ -156,6 +156,72 @@ def is_blocked_domain_or_url(value: str) -> bool:
     return False
 
 
+# =========================================================
+# TLD → COUNTRY MAPPING (for pre-LLM country filtering)
+# =========================================================
+TLD_COUNTRY = {
+    ".cn": "China",
+    ".jp": "Japan",
+    ".kr": "South Korea",
+    ".in": "India",
+    ".br": "Brazil",
+    ".mx": "Mexico",
+    ".ru": "Russia",
+    ".tr": "Turkey",
+    ".th": "Thailand",
+    ".vn": "Vietnam",
+    ".id": "Indonesia",
+    ".ph": "Philippines",
+    ".tw": "Taiwan",
+    ".pl": "Poland",
+    ".cz": "Czech Republic",
+    ".it": "Italy",
+    ".es": "Spain",
+    ".fr": "France",
+    ".nl": "Netherlands",
+    ".se": "Sweden",
+    ".no": "Norway",
+    ".dk": "Denmark",
+    ".fi": "Finland",
+    ".at": "Austria",
+    ".ch": "Switzerland",
+    ".be": "Belgium",
+    ".pt": "Portugal",
+    ".co.uk": "United Kingdom",
+    ".uk": "United Kingdom",
+    ".de": "Germany",
+    ".com.au": "Australia",
+    ".au": "Australia",
+    ".ca": "Canada",
+}
+
+
+def quick_country_from_tld(domain: str) -> str | None:
+    """
+    Infer country from domain TLD. Returns country name or None if .com/.net/etc.
+    Checks longest suffixes first so .co.uk matches before .uk.
+    """
+    domain = domain.lower()
+    # Check compound TLDs first (e.g. .co.uk, .com.au)
+    for tld, country in sorted(TLD_COUNTRY.items(), key=lambda x: -len(x[0])):
+        if domain.endswith(tld):
+            return country
+    return None
+
+
+def is_country_blocked_by_tld(domain: str, allowed_countries: list[str] | None) -> bool:
+    """
+    Returns True if domain TLD maps to a country NOT in allowed_countries.
+    Returns False for .com/.net/generic TLDs (can't infer country).
+    """
+    if not allowed_countries:
+        return False
+    country = quick_country_from_tld(domain)
+    if country is None:
+        return False  # generic TLD, can't filter
+    return country not in allowed_countries
+
+
 # Backwards compatibility
 def is_blocked_domain(domain: str) -> bool:
     return is_blocked_domain_or_url(domain)

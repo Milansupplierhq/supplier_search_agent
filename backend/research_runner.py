@@ -1,10 +1,10 @@
 import traceback
 
-from backend.job_store import update_job
+from backend.job_store import update_job, get_job
 from backend.apify_runner import run_serp_discovery
 from backend.google_shopping_runner import run_google_shopping_discovery
 from backend.supplier_validator import process_supplier
-from backend.filters import is_blocked_domain
+from backend.filters import is_blocked_domain, is_country_blocked_by_tld
 from backend.sheets import append_supplier_row
 from backend.config import MAX_CANDIDATE_DOMAINS, DEFAULT_TARGET_SUPPLIERS
 from backend.utils import domain_from_url
@@ -25,6 +25,11 @@ def _validate_candidates(
     """
     for item in candidates:
         if len(accepted) >= target:
+            break
+
+        # Check if user stopped the job
+        job = get_job(job_id)
+        if job and job.get("status") == "stopped":
             break
 
         try:
@@ -104,6 +109,8 @@ def run_research_job(job_id: str, req):
             domain = domain_from_url(product_url)
             if not domain or domain in seen_domains or is_blocked_domain(domain):
                 continue
+            if is_country_blocked_by_tld(domain, req.allowed_countries):
+                continue
 
             seen_domains.add(domain)
 
@@ -114,7 +121,10 @@ def run_research_job(job_id: str, req):
                 "price_hint": price_hint,
             })
 
-        # Update total with shopping candidates count
+        # Batch-limit: only validate target × 3 candidates (accounts for ~30% acceptance)
+        shopping_budget = min(len(shopping_candidates), target * 3)
+        shopping_candidates = shopping_candidates[:shopping_budget]
+
         update_job(job_id, total=len(shopping_candidates))
 
         # Validate shopping candidates (stop early if target met)
@@ -126,15 +136,20 @@ def run_research_job(job_id: str, req):
         # =================================================
         # PHASE 1 — SERP FALLBACK (only if target not met)
         # =================================================
-        if len(accepted) < target and req.use_apify:
-            remaining_budget = max_domains - len(seen_domains)
+        job = get_job(job_id)
+        is_stopped = job and job.get("status") == "stopped"
 
-            if remaining_budget > 0:
+        if not is_stopped and len(accepted) < target and req.use_apify:
+            # Batch-limit: only validate enough to fill the gap (× 4 for lower SERP acceptance)
+            still_needed = target - len(accepted)
+            serp_budget = still_needed * 4
+
+            if serp_budget > 0:
                 serp_results = run_serp_discovery(req.product)
                 serp_candidates: list[dict] = []
 
                 for item in serp_results:
-                    if len(serp_candidates) >= remaining_budget:
+                    if len(serp_candidates) >= serp_budget:
                         break
 
                     domain = item.get("domain")
@@ -142,6 +157,8 @@ def run_research_job(job_id: str, req):
                         continue
 
                     if is_blocked_domain(domain):
+                        continue
+                    if is_country_blocked_by_tld(domain, req.allowed_countries):
                         continue
 
                     seen_domains.add(domain)
@@ -162,9 +179,12 @@ def run_research_job(job_id: str, req):
                     job_id, req, processed,
                 )
 
+        job = get_job(job_id)
+        final_status = "stopped" if (job and job.get("status") == "stopped") else "completed"
+
         update_job(
             job_id,
-            status="completed",
+            status=final_status,
             processed=processed,
             accepted=accepted,
             rejected=rejected,
