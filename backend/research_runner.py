@@ -40,8 +40,14 @@ def _validate_candidates(
             if supplier.get("status") == "rejected":
                 rejected.append(supplier)
             else:
-                append_supplier_row(job_id, req.product, supplier)
                 accepted.append(supplier)
+                try:
+                    append_supplier_row(job_id, req.product, supplier)
+                except Exception as e:
+                    import logging
+                    logging.getLogger(__name__).warning(
+                        f"[SHEETS] Failed to write {supplier.get('url')}: {e}"
+                    )
 
         except Exception as e:
             rejected.append({
