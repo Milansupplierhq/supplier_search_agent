@@ -1,9 +1,12 @@
+import logging
 from fastapi import FastAPI, BackgroundTasks
 from pydantic import BaseModel, Field
 from typing import List, Optional
 import uuid
 from backend.job_store import init_job, get_job
 from backend.research_runner import run_research_job
+
+logging.basicConfig(level=logging.INFO, format="%(levelname)s %(name)s | %(message)s")
 
 app = FastAPI(title="Supplier Agent – Phase 1 Discovery")
 

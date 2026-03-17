@@ -1,4 +1,5 @@
 import json
+import logging
 from typing import Dict
 
 from openai import OpenAI
@@ -7,6 +8,7 @@ from backend.config import OPENAI_API_KEY, OPENAI_MODEL, NO_TEMPERATURE_MODELS, 
 from backend.web_fetcher import fetch_website_text, fetch_contact_text
 from backend.intent_agent import analyze_intent_with_llm
 
+logger = logging.getLogger(__name__)
 client = OpenAI(api_key=OPENAI_API_KEY)
 
 
@@ -134,7 +136,8 @@ def analyze_supplier_with_llm(website_text: str) -> Dict:
                 return json.loads(raw[start:end + 1])
 
     except Exception as e:
-        return {"error": f"llm_failed:{str(e)}"}
+        logger.error(f"[SUPPLIER LLM ERROR] {type(e).__name__}: {e}")
+        return {"error": f"llm_failed:{type(e).__name__}: {str(e)}"}
 
     return {"error": "llm_no_json"}
 
@@ -166,8 +169,8 @@ def _extract_contact_with_llm(contact_text: str) -> Dict:
             if start != -1 and end != -1:
                 return json.loads(raw[start:end + 1])
 
-    except Exception:
-        pass
+    except Exception as e:
+        logger.error(f"[CONTACT LLM ERROR] {type(e).__name__}: {e}")
 
     return {"email": None, "phone": None}
 
@@ -183,9 +186,11 @@ def process_supplier(
     # -------------------------------------------------
     # 1) Fetch website content
     # -------------------------------------------------
+    logger.info(f"[PIPELINE] Processing {url}")
     website_text = fetch_website_text(url)
 
     if not website_text:
+        logger.warning(f"[PIPELINE] {url} — website unavailable")
         return {
             "product": product,
             "url": url,
@@ -199,6 +204,8 @@ def process_supplier(
     # 2) Intent classification (LLM)
     # -------------------------------------------------
     intent_result = analyze_intent_with_llm(website_text)
+
+    logger.info(f"[PIPELINE] {url} — intent: {intent_result}")
 
     if "error" in intent_result or "intent" not in intent_result:
         return {
@@ -227,6 +234,8 @@ def process_supplier(
     # 3) Supplier classification (LLM)
     # -------------------------------------------------
     llm_result = analyze_supplier_with_llm(website_text)
+
+    logger.info(f"[PIPELINE] {url} — supplier LLM: {llm_result}")
 
     if "error" in llm_result:
         return {
